@@ -20,7 +20,8 @@ class TwitchAuthenticator < ::Auth::Authenticator
     # grab the info we need from omni auth
     data = auth_token[:info]
     extra = auth_token[:extra]
-    username = data["name"]
+    #Use the case-specific display_name for username, strip spaces
+    username = extra["display_name"].strip.split.join
     name = extra["display_name"]
     email = data["email"]
     twitch_uid = auth_token["uid"]
