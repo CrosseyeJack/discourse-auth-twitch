@@ -18,12 +18,13 @@ class TwitchAuthenticator < ::Auth::Authenticator
     result = Auth::Result.new
 
     # grab the info we need from omni auth
-    data = auth_token[:info]
-    extra = auth_token[:extra]
-    #Use the case-specific display_name for username, strip spaces
-    username = extra["display_name"].strip.split.join
-    name = extra["display_name"]
-    email = data["email"]
+    info = auth_token[:info]
+    raw = auth_token[:extra][:raw_info]
+    displayname = raw["display_name"] || raw["name"]
+
+    # Use the case-specific display_name for username if available, strip spaces
+    username = displayname.strip.split.join
+    email = info["email"]
     twitch_uid = auth_token["uid"]
 
     # plugin specific data storage
@@ -34,32 +35,42 @@ class TwitchAuthenticator < ::Auth::Authenticator
         User.where(id: current_info[:user_id]).first
       end
 
+    # If the user exists, overwrite the pluginstore to contain new token and/or username
+    if result.user
+      # Add comparison. No need to re-set the same data.
+      if current_info[:token] != auth_token[:credentials][:token]
+        ::PluginStore.set("twitch", "twitch_uid_#{twitch_uid}", {user_id: result.user.id, username: raw["name"], token: auth_token[:credentials][:token]})
+      end
+    end
+
     result.username = username
-    result.name = name
+    result.name = displayname
     result.email = email
-    result.extra_data = { twitch_uid: twitch_uid }
+    result.extra_data = { twitch_uid: twitch_uid, twitch_username: raw["name"], twitch_token: auth_token[:credentials][:token]}
 
     result
   end
 
   def after_create_account(user, auth)
     data = auth[:extra_data]
-    ::PluginStore.set("twitch", "twitch_uid_#{data[:twitch_uid]}", {user_id: user.id })
+    ::PluginStore.set("twitch", "twitch_uid_#{data[:twitch_uid]}", {user_id: user.id, username: data[:twitch_username], token: data[:twitch_token]})
   end
+
 
   def register_middleware(omniauth)
     omniauth.provider :twitch,
      CLIENT_ID,
      CLIENT_SECRET,
-     scope: 'user_read'
+     scope: 'user_read,user_subscriptions'
   end
 end
 
-auth_provider :title => 'with Twitch',
-    :message => 'Log in with Twitch (Make sure pop up blockers are not enabled).',
-    :frame_width => 920,
-    :frame_height => 800,
-    :authenticator => TwitchAuthenticator.new
+
+auth_provider title: 'with Twitch',
+    message: 'Log in with Twitch (Make sure pop up blockers are not enabled).',
+    frame_width: 960,
+    frame_height: 800,
+    authenticator: TwitchAuthenticator.new
 
 register_css <<CSS
 
