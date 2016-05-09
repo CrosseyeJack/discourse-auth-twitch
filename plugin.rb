@@ -61,7 +61,7 @@ class TwitchAuthenticator < ::Auth::Authenticator
     omniauth.provider :twitch,
      CLIENT_ID,
      CLIENT_SECRET,
-     scope: 'user_read,user_subscriptions'
+     scope: 'user_read user_subscriptions'
   end
 end
 
