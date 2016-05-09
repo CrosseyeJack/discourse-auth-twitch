@@ -2,6 +2,7 @@ discourse-auth-twitch
 =====================
 
 Twitch API OAuth for Discourse
+Updated to support twitch tokens and subscription checks.
 
 Installation Instructions (for Docker installations):
 
@@ -15,7 +16,7 @@ Installation Instructions (for Docker installations):
 ```
 * Under section ```hooks:``` append the following
 ```
-          - git clone https://github.com/night/discourse-auth-twitch.git
+          - git clone https://github.com/SunspotsEU/discourse-auth-twitch.git
 ```
 * Rebuild the docker container
 ```
