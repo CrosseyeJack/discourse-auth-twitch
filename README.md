@@ -16,7 +16,7 @@ Installation Instructions (for Docker installations):
 ```
 * Under section ```hooks:``` append the following
 ```
-          - git clone https://github.com/SunspotsEU/discourse-auth-twitch.git
+          - git clone https://github.com/sunspots/discourse-auth-twitch.git
 ```
 * Rebuild the docker container
 ```
