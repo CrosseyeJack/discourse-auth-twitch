@@ -1,12 +1,13 @@
 # name: Twitch
 # about: Authenticate to Discourse with Twitch
 # version: 1.0.0
-# author: Night (nightdev.com)
+# author: Crosseye Jack dan@crosseyejack.com
+# Orig author: Night (nightdev.com) But I've hacked it to bits cause I need it to do X and the orig did Y
+## TODO check if Display name or email has changed since last login and update
 
 gem 'omniauth-twitch', '0.1.2'
 
 class TwitchAuthenticator < ::Auth::Authenticator
-
   CLIENT_ID = ENV["TWITCH_CLIENT_ID"]
   CLIENT_SECRET = ENV["TWITCH_CLIENT_SECRET"]
 
@@ -14,51 +15,79 @@ class TwitchAuthenticator < ::Auth::Authenticator
     'twitch'
   end
   
+  ## Logger function used for deving.
   def log(level, message)
     OmniAuth.logger.send(level, "(#{name}) #{message}")
   end
 
   def after_authenticate(auth_token)
     result = Auth::Result.new
+    
+    ## Put the data from oauth into a couple of vars
+    info = auth_token[:info] ## info contains the basics
+    raw = auth_token[:extra][:raw_info] ## will contain the extras such as created_at which we can use to prevent young accounts from logging in
+    
+    ## Check if the display name matches twitches allowed username rules
+    ## if so set their forum username as twitch displayname
+    ## else use their twitch username instead
+    username = 
+      if info["display_name"] =~ /^[a-zA-Z0-9][\w]{3,24}$/
+        info["display_name"]
+      else
+        info["name"]
+      end
+    
+    ## set their fullname as their twitch displayname if its set or their twitch username if not
+    fullname = info["display_name"] || info["name"]
 
-    # grab the info we need from omni auth
-    info = auth_token[:info]
-    raw = auth_token[:extra][:raw_info]
-    displayname = raw["display_name"] || raw["name"]
-
-    # Use the case-specific display_name for username if available, strip spaces
-    username = raw["name"]
     email = info["email"]
     twitch_uid = auth_token["uid"]
     
-    if User.find_by_username(username)
-      current_info = ::PluginStore.get("twitch", "twitch_uid_#{twitch_uid}")
-      result.user = User.where(id: current_info[:user_id]).first
-    else
-      unless SiteSetting.allow_new_registrations
+    result.user = User.find_by_username(username)
+    ## Why the change from checking for UID to username?
+    ## Because the UID is stored in the plugin store and atm that store is not deleted on account deletion and will error out.
+    ## That is something I need TODO so for now we will use usernames.
+    
+    if result.user.nil? ## didn't find username in the forum, preform some checks and create the account
+      
+      ## Perform pre account creation checks
+      ## check if they haven't verified their emails address with twitch
+      if email.nil?
+        log :info, "NEW USER: Email Address not validated"
         result.failed = true
-        result.failed_reason = I18n.t("login.new_registrations_disabled")
+        result.failed_reason = "You need to verify your email address with twitch."
         return result
       end
+      
+      ## check if their email address is already in the forum
       if User.find_by_email(email)
-        log :info, "Email already exists"
+        log :info, "NEW USER: Email already exists"
         result.failed = true
         result.failed_reason = I18n.t("login.something_already_taken")
         return result
       end
-      result.user = User.create(name: displayname, email: email, username: username, approved: true)
+      
+      ## check if the forum is closed to user registrations
+      unless SiteSetting.allow_new_registrations
+        log :info, "NEW USER: Site Closed to new accounts"
+        result.failed = true
+        result.failed_reason = I18n.t("login.new_registrations_disabled")
+        return result
+      end
+      
+      ## Everything looks good - create the account
+      result.user = User.create(name: fullname, email: email, username: username, approved: true)
       result.email_valid = true
-      ::PluginStore.set("twitch", "twitch_uid_#{twitch_uid}", {user_id: result.user.id, username: username, token: auth_token[:credentials][:token]})
-      log :info, "NEW USER: #{result.user} #{result.email} #{result.name} #{result.email_valid}"
+      ::PluginStore.set("twitch", "twitch_uid_#{twitch_uid}", {user_id: result.user.id, username: username, token: auth_token[:credentials][:token]}) ## Store their details in the plugin store
+      log :info, "NEW USER CREATED: #{result.user} #{result.email} #{result.name} #{result.email_valid}"
     end
     
-    # If the user exists, overwrite the pluginstore to contain new token and/or username
-    if current_info
-      # Add comparison. No need to re-set the same data.
-      if current_info[:token] != auth_token[:credentials][:token]
-        ::PluginStore.set("twitch", "twitch_uid_#{twitch_uid}", {user_id: result.user.id, username: username, token: auth_token[:credentials][:token]})
-      end
+    current_info = ::PluginStore.get("twitch", "twitch_uid_#{twitch_uid}")
+    if current_info[:token] != auth_token[:credentials][:token] ## Update the token in the plugin store if its changed
+      ::PluginStore.set("twitch", "twitch_uid_#{twitch_uid}", {user_id: result.user.id, username: username, token: auth_token[:credentials][:token]})
     end
+
+    ## attach some extra data about the user to the result and return it.
     result.extra_data = { twitch_uid: twitch_uid, twitch_username: username, twitch_token: auth_token[:credentials][:token]}
     result
   end
