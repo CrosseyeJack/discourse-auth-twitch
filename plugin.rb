@@ -49,6 +49,23 @@ class TwitchAuthenticator < ::Auth::Authenticator
     ## That is something I need TODO so for now we will use usernames.
     
     if result.user.nil? ## didn't find username in the forum, preform some checks and create the account
+      ## Check if the Twitch User ID is in the plugin store. If it is the user has changed their twitch username
+      checkPluginStore = ::PluginStore.get("twitch", "twitch_uid_#{twitch_uid}")
+      unless checkPluginStore.nil?
+        result.user = User.find_by_username(checkPluginStore[:username])
+        unless result.user.nil?
+          if result.user.name != "Twitch: #{username}"
+            log :info, "USERS NAME DIFFERS: #{result.user.name} --- #{username}"
+            result.user.update_column(:name, "Twitch: #{username}")
+          end
+          username = result.user.username
+          if checkPluginStore[:token] != auth_token[:credentials][:token] ## Update the token in the plugin store if its changed
+            ::PluginStore.set("twitch", "twitch_uid_#{twitch_uid}", {user_id: result.user.id, username: username, token: auth_token[:credentials][:token]})
+          end
+          result.extra_data = { twitch_uid: twitch_uid, twitch_username: username, twitch_token: auth_token[:credentials][:token]}
+          return result
+        end
+      end
       
       ## Perform pre account creation checks
       ## check if they haven't verified their emails address with twitch
